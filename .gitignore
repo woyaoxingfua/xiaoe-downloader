@@ -1,0 +1,23 @@
+# 便携 Python 环境（体积太大，不提交）
+WPy32-3830/
+
+# 下载的视频文件
+downloads/
+
+# 临时下载分片目录
+tmp_*/
+
+# ffmpeg concat 列表文件
+_concat.txt
+_concat2.txt
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 日志文件
+downloader.log
+
+# 系统文件
+Thumbs.db
+Desktop.ini
