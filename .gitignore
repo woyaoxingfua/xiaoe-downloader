@@ -21,3 +21,7 @@ downloader.log
 # 系统文件
 Thumbs.db
 Desktop.ini
+
+# Termux venv 虚拟环境（termux/ 移植版）
+venv/
+.venv/
