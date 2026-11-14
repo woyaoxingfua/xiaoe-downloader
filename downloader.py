@@ -424,11 +424,6 @@ def download_one(name, m3u8_url, referer=None):
         return False
 
     # 5. 合并（TS 二进制拼接后重建时间戳，避免分片边界时间戳间隙导致时长变长）
-    ffmpeg = find_ffmpeg()
-    if not ffmpeg:
-        log('  ❌ 未找到 ffmpeg！请将其与脚本置于同一目录或加入 PATH')
-        shutil.rmtree(tmp, ignore_errors=True)
-        return False
     files = [results[i] for i in sorted(results)]
     output = os.path.join(OUT, f'{safe_name(name)}.mp4')
     if os.path.exists(output):
@@ -441,6 +436,21 @@ def download_one(name, m3u8_url, referer=None):
         for fp in files:
             with open(fp, 'rb') as rf:
                 shutil.copyfileobj(rf, wf)
+
+    # 5.1.5 ffmpeg 可选：缺失时进入 TS 直出模式，拼接原流直接交付
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        ts_out = os.path.join(OUT, f'{safe_name(name)}.ts')
+        if os.path.exists(ts_out):
+            os.remove(ts_out)
+        shutil.move(merged_ts, ts_out)
+        shutil.rmtree(tmp, ignore_errors=True)
+        mb = os.path.getsize(ts_out) / 1048576
+        log(f'  [4/4] 未找到 ffmpeg，TS 直出')
+        log(f'  完成: {mb:.1f} MB  ->  {ts_out}')
+        log('  （TS 为分片拼接原流，可直接用于转写/二次处理；播放器显示时长可能偏长。')
+        log('    安装 ffmpeg 后重新下载，即得时间轴正常且经时长校验的 MP4）')
+        return True
 
     def _run(cmd, timeout=3600):
         return subprocess.run(cmd, capture_output=True, encoding='utf-8',
@@ -595,14 +605,14 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     ffmpeg = find_ffmpeg()
     if not ffmpeg:
-        log('未找到 ffmpeg.exe，请放到本目录下')
-        sys.exit(1)
+        log('⚠ 未找到 ffmpeg：将以 TS 直出模式运行（不封装 MP4）')
+        log('  安装 ffmpeg（与本脚本同目录或加入 PATH）后重启，即可输出 MP4')
 
     server = HTTPServer(('127.0.0.1', PORT), Handler)
 
     log('=' * 50)
     log('小鹅通 M3U8 视频下载器 启动')
-    log(f'ffmpeg: {ffmpeg}')
+    log(f'ffmpeg: {ffmpeg or "未找到（TS 直出模式）"}')
     log(f'输出:   {OUT}')
     log(f'端口:   localhost:{PORT}')
     log('等待浏览器发送下载任务...')
