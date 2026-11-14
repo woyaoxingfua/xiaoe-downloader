@@ -84,7 +84,7 @@ xiaoe-downloader/
 2. **启动下载器**：双击 `启动.bat`，或命令行 `python -u downloader.py`（依赖会自动安装）；
 3. **下载**：打开课程视频页 → 右下角浮窗弹出 → 点「发送到下载」→ 成品在 `downloads/`。
 
-> 需保证 `ffmpeg.exe` 与脚本同目录（仓库已捆绑）或其在系统 PATH 中。
+> 需保证 `ffmpeg.exe` 与脚本同目录（仓库已捆绑）或其在系统 PATH 中。时长校验额外需要 `ffprobe`（完整版 ffmpeg 发行包自带；若仅有捆绑的 `ffmpeg.exe`，校验会自动跳过，拼接 + genpts 重建时间轴仍然生效）。
 
 ## 📱 Termux / Android 平板使用
 
