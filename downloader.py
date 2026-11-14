@@ -107,6 +107,37 @@ def find_ffmpeg():
     return None
 
 
+def find_ffprobe():
+    """查找 ffprobe：优先与 ffmpeg 同目录，其次 PATH"""
+    ff = find_ffmpeg()
+    if ff:
+        cand = os.path.join(os.path.dirname(ff), 'ffprobe.exe')
+        if os.path.isfile(cand):
+            return cand
+        cand = os.path.join(os.path.dirname(ff), 'ffprobe')
+        if os.path.isfile(cand):
+            return cand
+    for p in [shutil.which('ffprobe'), shutil.which('ffprobe.exe')]:
+        if p and os.path.isfile(p):
+            return p
+    return None
+
+
+def probe_duration(path):
+    """用 ffprobe 读取媒体文件实际时长（秒），失败返回 None"""
+    fp = find_ffprobe()
+    if not fp:
+        return None
+    try:
+        r = subprocess.run(
+            [fp, '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', path],
+            capture_output=True, text=True, timeout=60)
+        return float(r.stdout.strip())
+    except Exception:
+        return None
+
+
 # 小鹅通及其 CDN 域名白名单
 XIAOE_DOMAINS = (
     'xiaoeknow.com', 'xiaoe-tech.com', 'xiaoecloud.com',
@@ -232,8 +263,14 @@ def download_one(name, m3u8_url, referer=None):
     segments = []
     key_url = None
     iv = b'\x00' * 16
+    declared_duration = 0.0   # 所有 EXTINF 声明时长之和（用于校验最终视频时长）
     for line in m3u8.split('\n'):
         line = line.strip()
+        if line.startswith('#EXTINF:'):
+            try:
+                declared_duration += float(line[8:].split(',')[0])
+            except Exception:
+                pass
         if 'URI=' in line and 'AES-128' in line:
             # 兼容 URI="..." 和 URI=... 两种格式
             uri_match = re.search(r'URI="?([^",]+)"?', line)
@@ -248,7 +285,7 @@ def download_one(name, m3u8_url, referer=None):
             u = line if line.startswith('http') else urljoin(base, line)
             segments.append(u)
 
-    log(f'    总片段: {len(segments)} 个')
+    log(f'    总片段: {len(segments)} 个' + (f'  |  声明总时长: {declared_duration:.0f}s' if declared_duration else ''))
     if key_url:
         log(f'    加密: AES-128 | 密钥地址: {key_url[:150]}')
         log(f'    IV: {iv.hex()}')
@@ -274,8 +311,14 @@ def download_one(name, m3u8_url, referer=None):
                     new_segments = []
                     new_key_url = None
                     new_iv = b'\x00' * 16
+                    new_declared = 0.0
                     for line in inner_text.split('\n'):
                         line = line.strip()
+                        if line.startswith('#EXTINF:'):
+                            try:
+                                new_declared += float(line[8:].split(',')[0])
+                            except Exception:
+                                pass
                         if 'URI=' in line and 'AES-128' in line:
                             uri_match = re.search(r'URI="?([^",]+)"?', line)
                             if uri_match:
@@ -292,7 +335,8 @@ def download_one(name, m3u8_url, referer=None):
                         segments = new_segments
                         key_url = new_key_url   # 以内层密钥为准（None = 未加密）
                         iv = new_iv
-                        log(f'{len(segments)} 个真实片段')
+                        declared_duration = new_declared
+                        log(f'{len(segments)} 个真实片段' + (f'，声明总时长 {declared_duration:.0f}s' if declared_duration else ''))
                         if key_url:
                             log(f'    真实密钥: {key_url[:150]}')
                         else:
@@ -368,49 +412,82 @@ def download_one(name, m3u8_url, referer=None):
         shutil.rmtree(tmp, ignore_errors=True)
         return False
 
-    # 5. 合并
-    log(f'  [4/4] 合并 ({elapsed:.1f}s 下载, {len(results)}/{len(segments)} 成功)...', end=' ')
+    # 5. 合并（TS 二进制拼接后重建时间戳，避免分片边界时间戳间隙导致时长变长）
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        log('  ❌ 未找到 ffmpeg！请将其与脚本置于同一目录或加入 PATH')
+        shutil.rmtree(tmp, ignore_errors=True)
+        return False
     files = [results[i] for i in sorted(results)]
     output = os.path.join(OUT, f'{safe_name(name)}.mp4')
-
-    # Concat 列表
-    lst = os.path.join(OUT, '_concat.txt')
-    with open(lst, 'w', encoding='utf-8') as f:
-        for fp in files:
-            f.write(f"file '{fp.replace(os.sep, '/')}'\n")
-
     if os.path.exists(output):
         os.remove(output)
 
-    cmd = [find_ffmpeg() or 'ffmpeg', '-f', 'concat', '-safe', '0',
-           '-i', lst, '-c', 'copy', '-movflags', '+faststart', '-y', output]
-    r = subprocess.run(cmd, capture_output=True, encoding='utf-8',
-                       errors='replace', timeout=600)
-    if os.path.exists(lst):
-        os.remove(lst)
+    # 5.1 二进制拼接所有 TS。MPEG-TS 是流格式，天然支持二进制拼接，
+    # 比 concat 列表方式更可靠（不会在每片边界保留独立时间戳间隙）
+    merged_ts = os.path.join(tmp, '_merged.ts')
+    with open(merged_ts, 'wb') as wf:
+        for fp in files:
+            with open(fp, 'rb') as rf:
+                shutil.copyfileobj(rf, wf)
 
-    if r.returncode != 0:
-        # 重编码回退
-        lst2 = os.path.join(OUT, '_concat2.txt')
-        with open(lst2, 'w', encoding='utf-8') as f:
-            for fp in files:
-                f.write(f"file '{fp.replace(os.sep, '/')}'\n")
-        cmd2 = [find_ffmpeg() or 'ffmpeg', '-f', 'concat', '-safe', '0',
-                '-i', lst2, '-c:v', 'libx264', '-c:a', 'aac',
-                '-movflags', '+faststart', '-y', output]
-        subprocess.run(cmd2, capture_output=True, encoding='utf-8',
-                       errors='replace', timeout=600)
-        if os.path.exists(lst2):
-            os.remove(lst2)
+    def _run(cmd, timeout=3600):
+        return subprocess.run(cmd, capture_output=True, encoding='utf-8',
+                              errors='replace', timeout=timeout)
+
+    def _duration_ok():
+        """用 ffprobe 对比实际时长与 m3u8 声明时长，偏差超过阈值则判失败"""
+        if not os.path.exists(output):
+            return False, None
+        actual = probe_duration(output)
+        if actual is None or declared_duration <= 0:
+            return True, actual
+        diff = actual - declared_duration
+        if abs(diff) > max(3.0, declared_duration * 0.02):
+            return False, actual
+        return True, actual
+
+    log(f'  [4/4] 合并 ({elapsed:.1f}s 下载, {len(results)}/{len(segments)} 成功)...')
+
+    # 5.2 方案 A：无损重封装 + 重建时间戳（+genpts 让 ffmpeg 基于连续流重新生成 PTS）
+    cmd_copy = [ffmpeg, '-y', '-fflags', '+genpts',
+                '-i', merged_ts,
+                '-c', 'copy', '-avoid_negative_ts', 'make_zero',
+                '-movflags', '+faststart', output]
+    r = _run(cmd_copy)
+
+    ok, actual = _duration_ok()
+    if not ok:
+        if actual is not None:
+            log(f'    ⚠ 无损重封装时长异常: 实际 {actual:.0f}s / 声明 {declared_duration:.0f}s '
+                f'(差 {actual - declared_duration:+.0f}s)')
+            log('    ffmpeg 信息: ' + (r.stderr.strip().splitlines()[-1] if r.stderr else ''))
+        # 5.3 方案 B：重编码，彻底重建时间轴
+        log('    时间轴异常，改用重编码修复（较慢，请耐心等待）...')
+        cmd_re = [ffmpeg, '-y', '-fflags', '+genpts',
+                  '-i', merged_ts,
+                  '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+                  '-c:a', 'aac', '-b:a', '128k',
+                  '-avoid_negative_ts', 'make_zero',
+                  '-movflags', '+faststart', output]
+        _run(cmd_re)
+        ok2, actual = _duration_ok()
+        if not ok2 and actual is not None:
+            log(f'    重编码后仍有偏差: 实际 {actual:.0f}s / 声明 {declared_duration:.0f}s')
 
     shutil.rmtree(tmp, ignore_errors=True)
 
     if os.path.exists(output):
         mb = os.path.getsize(output) / 1048576
-        log(f'  {mb:.1f} MB  ->  {output}')
+        if declared_duration > 0 and actual:
+            log(f'  完成: {mb:.1f} MB | 时长 {actual:.0f}s（声明 {declared_duration:.0f}s，差 {actual-declared_duration:+.0f}s）')
+        else:
+            log(f'  完成: {mb:.1f} MB  ->  {output}')
         return True
     else:
         log('  合并失败')
+        if r.stderr:
+            log('  ffmpeg 错误: ' + '\n  '.join(r.stderr.strip().splitlines()[-5:]))
         return False
 
 
