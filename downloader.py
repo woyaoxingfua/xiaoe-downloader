@@ -124,18 +124,29 @@ def find_ffprobe():
 
 
 def probe_duration(path):
-    """用 ffprobe 读取媒体文件实际时长（秒），失败返回 None"""
+    """读取媒体文件实际时长（秒），失败返回 None。
+    优先 ffprobe；无 ffprobe 时回退解析 ffmpeg -i 输出的 Duration 行，
+    保证仅有捆绑 ffmpeg.exe 的用户也能进行时长校验。"""
     fp = find_ffprobe()
-    if not fp:
-        return None
+    if fp:
+        try:
+            r = subprocess.run(
+                [fp, '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', path],
+                capture_output=True, text=True, timeout=60)
+            return float(r.stdout.strip())
+        except Exception:
+            pass
     try:
-        r = subprocess.run(
-            [fp, '-v', 'error', '-show_entries', 'format=duration',
-             '-of', 'default=noprint_wrappers=1:nokey=1', path],
-            capture_output=True, text=True, timeout=60)
-        return float(r.stdout.strip())
+        r = subprocess.run([find_ffmpeg(), '-i', path], capture_output=True,
+                           text=True, encoding='utf-8', errors='replace', timeout=60)
+        m = re.search(r'Duration:\s*(\d+):(\d{2}):(\d{2}\.\d+)', r.stderr)
+        if m:
+            h, mnt, sec = m.groups()
+            return int(h) * 3600 + int(mnt) * 60 + float(sec)
     except Exception:
-        return None
+        pass
+    return None
 
 
 # 小鹅通及其 CDN 域名白名单
