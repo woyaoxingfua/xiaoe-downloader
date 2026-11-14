@@ -13,6 +13,8 @@
 - 本项目只是一个本地技术工具，与任何平台无关，按"现状"提供，使用中产生的问题由使用者自己负责；
 - 本仓库的改动与原作者 [likunqi](https://github.com/likunqi) 无关，也请勿就本仓库的问题打扰原作者；内容相关方如有异议，提 Issue 即可，核实后处理。
 
+> 📜 完整版免责声明（项目宗旨、合规前提、红线清单、版权归属、责任切割等七节全文）见 **[DISCLAIMER.md](DISCLAIMER.md)** —— 使用本项目的任何部分即视为已阅读并接受其全部内容。
+
 ---
 
 ## ✨ 功能特性
@@ -60,6 +62,7 @@ TS 二进制拼接 → ffmpeg +genpts 重封装 → ffprobe 时长校验 ──�
 
 ```
 xiaoe-downloader/
+├── DISCLAIMER.md               # 完整版免责声明
 ├── downloader.py               # Windows 核心下载引擎
 ├── 小鹅通视频 m3u8 地址嗅探提取器.js   # 油猴脚本 v1.0（Windows 配套）
 ├── 启动.bat                     # Windows 一键启动
