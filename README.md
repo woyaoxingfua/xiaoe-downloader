@@ -64,7 +64,8 @@ TS 二进制拼接 → ffmpeg +genpts 重封装 → ffprobe 时长校验 ──�
 xiaoe-downloader/
 ├── DISCLAIMER.md               # 完整版免责声明
 ├── downloader.py               # Windows 核心下载引擎
-├── 小鹅通视频 m3u8 地址嗅探提取器.js   # 油猴脚本 v1.0（Windows 配套）
+├── 小鹅通视频 m3u8 地址嗅探提取器.js   # 油猴脚本 v1.0（原版，保留）
+├── 小鹅通视频 m3u8 地址嗅探提取器 (通用版)-1.2.user.js   # 油猴脚本 v1.2（推荐，双平台通用）
 ├── 启动.bat                     # Windows 一键启动
 ├── ffmpeg.exe                   # 捆绑的 ffmpeg（Windows）
 ├── requirements.txt            # Python 依赖
@@ -80,11 +81,11 @@ xiaoe-downloader/
 
 ## 🖥️ Windows 使用
 
-1. **装油猴脚本**：浏览器安装 Tampermonkey → 新建脚本 → 粘贴 `小鹅通视频 m3u8 地址嗅探提取器.js` 全部内容并保存；
+1. **装油猴脚本**：浏览器安装 Tampermonkey → 新建脚本 → 粘贴 `小鹅通视频 m3u8 地址嗅探提取器 (通用版)-1.2.user.js` 全部内容并保存（推荐：含 iframe 嗅探与 performance 补扫，双平台通用；原版 v1.0 `小鹅通视频 m3u8 地址嗅探提取器.js` 也仍可用）；
 2. **启动下载器**：双击 `启动.bat`，或命令行 `python -u downloader.py`（依赖会自动安装）；
 3. **下载**：打开课程视频页 → 右下角浮窗弹出 → 点「发送到下载」→ 成品在 `downloads/`。
 
-> 需保证 `ffmpeg.exe` 与脚本同目录（仓库已捆绑）或其在系统 PATH 中。时长校验额外需要 `ffprobe`（完整版 ffmpeg 发行包自带；若仅有捆绑的 `ffmpeg.exe`，校验会自动跳过，拼接 + genpts 重建时间轴仍然生效）。
+> 需保证 `ffmpeg.exe` 与脚本同目录（仓库已捆绑）或其在系统 PATH 中。时长读取优先用 `ffprobe`（完整版 ffmpeg 发行包自带），无 ffprobe 时自动回退解析 `ffmpeg -i` 的输出，仅有捆绑 `ffmpeg.exe` 也能完成时长校验。
 
 ## 📱 Termux / Android 平板使用
 
