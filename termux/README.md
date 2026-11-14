@@ -6,21 +6,20 @@
 
 ---
 
-## 与 Windows 原版的差异
+## 与 Windows 版的差异
 
-| 项目 | Windows 原版 | Termux 移植版 |
-|------|--------------|---------------|
+| 项目 | Windows 版 | Termux 移植版 |
+|------|-----------|---------------|
 | ffmpeg | 捆绑 `ffmpeg.exe` | 来自 `pkg install ffmpeg`（含 ffprobe） |
 | 控制台编码 | 自动探测 Windows 代码页（GBK/UTF-8） | 统一 UTF-8 |
 | 依赖安装 | pip 自动安装（清华镜像） | pip 自动安装（清华镜像，**需 venv**） |
-| 分片合并 | ffmpeg concat 列表（`-f concat`） | **TS 二进制拼接 + `-fflags +genpts` 重建时间戳** |
-| 时长校验 | 无 | ffprobe 实测时长 vs m3u8 声明时长，偏差超过 `max(3s, 2%)` 判定失败 |
-| 失败回退 | concat 重编码 | 重编码（libx264 veryfast / aac 128k）彻底重建时间轴 |
 | 油猴脚本 | v1.0 | **v1.2**：iframe 内嗅探 + postMessage 汇总、performance 资源补扫 |
+
+> 分片合成方式（TS 二进制拼接 + `-fflags +genpts` 重建时间戳 + ffprobe 时长校验 + 重编码回退）最初在 Termux 版实现，**现已同步至 Windows 版**，两平台行为一致。
 
 ### 为什么改分片合成？
 
-原版使用 ffmpeg concat 列表合并，每个 TS 分片边界保留独立时间戳，遇到分片间 PTS 不连续时会插入间隙，导致**合成后的视频时长比实际长**（拖进度条出现跳帧/黑屏）。移植版改为：
+早期版本使用 ffmpeg concat 列表合并，每个 TS 分片边界保留独立时间戳，遇到分片间 PTS 不连续时会插入间隙，导致**合成后的视频时长莫名变长**（拖进度条出现跳帧/黑屏）。移植版改为（现已同步至 Windows 版）：
 
 1. **二进制拼接**：MPEG-TS 是流格式，直接按字节序拼接所有分片为单个 `.ts`；
 2. **`+genpts` 无损重封装**：让 ffmpeg 基于连续流重新生成 PTS，`-avoid_negative_ts make_zero` 归零起始时间戳；
